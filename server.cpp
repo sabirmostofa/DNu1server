@@ -17,85 +17,92 @@
 #include <netinet/in.h>
 #include <cstdlib>
 
-void error(const char *msg)
-{
+void error(const char *msg) {
     perror(msg);
     exit(1);
 }
 
+char *bit_receive(char *buffer, int cnt) {
 
-char *bit_receive(char *buffer, int cnt){
-    
-    char *buffer1, *ptr, c, c1=0;
+    char *buffer1, *ptr, c, c1 = 0;
     int i = 0;
-    if(cnt % 8 != 0) return 0;  //we must have n whole bytes!
-    
-    ptr = buffer1 = (char*) malloc(cnt/8);
+    if (cnt % 8 != 0) return 0; //we must have n whole bytes!
 
-    while(cnt != 0){   
-        cnt--;    
-        c = *buffer;           
+    ptr = buffer1 = (char*) malloc(cnt / 8);
 
-        if(c != '0'){
-            c1 |= 0x80 >> i;    
+    while (cnt != 0) {
+        cnt--;
+        c = *buffer;
+
+        if (c != '0') {
+            c1 |= 0x80 >> i;
         }
-        i++;                  
-        if(i>7){                
-            i=0;
-            *ptr = c1;          
-            c1 = 0;             
-            ptr++;              
+        i++;
+        if (i > 7) {
+            i = 0;
+            *ptr = c1;
+            c1 = 0;
+            ptr++;
         }
-        buffer++;             
+        buffer++;
     }
-    return buffer1; 
+    return buffer1;
 }
 
-int main(int argc, char *argv[])
-{
- 	int rc;
-	int s, s1;
+int main(int argc, char *argv[]) {
+    int rc;
+    int s, s1;
     char key[] = "exit";
     char key1[] = "stop";
     char line[1024];
 
-	struct sockaddr_in addr;
-	s = socket( AF_INET, SOCK_STREAM, IPPROTO_TCP );
+    struct sockaddr_in addr;
+    s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 
-	addr.sin_family = AF_INET;
-	addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = INADDR_ANY;
 
     // set SO_REUSEADDR on a socket to true (1):
-	int optval = 1;
-	setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof optval);
-	addr.sin_port = htons(3334);	// little endian -> big endian
-	rc = bind( s, (struct sockaddr *) &addr, sizeof(addr) );
-	if(rc < 0){
-		printf("bind failed\n");
-		return 0;
-	}
-	do{
-		rc = listen( s, 10 ); // warte auf ankommendes connect
-		if(rc < 0){
-			printf("listen failed\n");
-			return 0;
-		}
-		printf("listen\n");
-		s1 = accept( s, NULL, NULL );
-		printf("accepted\n");
-		//connected1 = 1;
-		do{
-			usleep(30000);
-			rc = recv( s1, line, sizeof(line), 0 );
-			if(rc > 0){
-                            printf("size: %d  bits\n", rc);
-                            char *received = bit_receive(line, rc);
-                            printf("%s \n", received);
-//				line[rc] = '\0';
-//				printf("%s \n",line);
-			}
-		}while ((strcmp (key,line)) != 0 && (strcmp (key1,line)) != 0 && (rc > 0) );
-	}while((strcmp (key1,line)) != 0);
-	shutdown(s, SHUT_RDWR);
+    int optval = 1;
+    setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof optval);
+    addr.sin_port = htons(3334); // little endian -> big endian
+    rc = bind(s, (struct sockaddr *) &addr, sizeof (addr));
+    if (rc < 0) {
+        printf("bind failed\n");
+        return 0;
+    }
+    do {
+        rc = listen(s, 10); // warte auf ankommendes connect
+        if (rc < 0) {
+            printf("listen failed\n");
+            return 0;
+        }
+        printf("listen\n");
+        s1 = accept(s, NULL, NULL);
+        printf("accepted\n");
+        int fileSize;
+        recv(s1, &fileSize, sizeof(unsigned int), 0);
+        printf(" File Size : %d", fileSize);
+        //connected1 = 1;
+        do {
+            usleep(30000);
+            rc = recv(s1, line, 1024, 0);
+
+            FILE *File;
+            File = fopen("received.txt", "wb");
+            fwrite( line, 1, fileSize, File);
+            fclose(File);
+            
+            
+            if (rc > 0) {
+                printf("size: %d  bits\n", rc);
+                char *received = bit_receive(line, rc);
+                printf("%s \n", received);
+                //				line[rc] = '\0';
+                //				printf("%s \n",line);
+            }
+        } while ((strcmp(key, line)) != 0 && (strcmp(key1, line)) != 0 && (rc > 0));
+    } while ((strcmp(key1, line)) != 0);
+    shutdown(s, SHUT_RDWR);
     return 0;
 }
