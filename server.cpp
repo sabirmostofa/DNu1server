@@ -19,6 +19,26 @@
 #include <iostream>
 #include <cmath>
 #include <math.h>
+#include <iostream>
+
+using namespace std;
+
+unsigned int hackers_delight_crc32(unsigned char *message) {
+    int i, j;
+    unsigned int byte, crc, mask;
+    i = 0;
+    crc = 0xFFFFFFFF;
+    while (message[i] != 0) {
+        byte = message[i]; // Get next byte.
+        crc = crc ^ byte;
+        for (j = 7; j >= 0; j--) { // Do eight times.
+            mask = -(int) (crc & 1);
+            crc = (crc >> 1) ^ (0xEDB88320 & mask);
+        }
+        i = i + 1;
+    }
+    return ~crc;
+}
 
 void error(const char *msg) {
     perror(msg);
@@ -44,7 +64,8 @@ const double PI = 3.14159265;
 
 double randf_gauss() {
     double mu = 0.0; // mittelwert
-    double sigma = 0.25; //!! varianz 0.45; try a values from 0.25 to 0.55
+    // bei größer sigma mehrere Veränderungen
+    double sigma = 0.55; //!! varianz 0.45; try a values from 0.25 to 0.55
     return mu + sigma * sqrt(-2.0 * log(randf())) * cos(2 * PI * randf());
 }
 
@@ -56,7 +77,8 @@ double randf_gauss() {
  *                Am Ausgang ein Bit mit möglicher Störung             
  ***********************************************************************/
 char analog_kanal_modell(char inputbit) { //add noise to the bit stream
-    double input_signal_level = 0.1;
+    //je schwächer signal ist,desto mehr Veränderung
+    double input_signal_level = 0.08;
     char outputbit;
     double in, noise, out;
     /////////////////////  Digital to Analog conversion //////////////////
@@ -75,10 +97,6 @@ char analog_kanal_modell(char inputbit) { //add noise to the bit stream
         outputbit = '0';
     return outputbit;
 }
-
-
-
-
 
 char *bit_receive(char *buffer, int cnt) {
 
@@ -112,7 +130,7 @@ int main(int argc, char *argv[]) {
     int s, s1;
     char key[] = "exit";
     char key1[] = "stop";
-    char line[1024 * 8];
+    char file[1024 * 8];
 
     struct sockaddr_in addr;
     s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -138,49 +156,63 @@ int main(int argc, char *argv[]) {
         printf("listen\n");
         s1 = accept(s, NULL, NULL);
         printf("accepted\n");
-        int fileSize;
+        unsigned int fileSize;
+        unsigned int crcVal;
+
         recv(s1, &fileSize, sizeof (unsigned int), 0);
-        printf(" File Size : %d", fileSize);
+        recv(s1, &crcVal, sizeof (unsigned int), 0);
+        printf(" File Size : %d Bytes \n", fileSize);
+        printf(" CRC Value : %d\n", crcVal);
         //connected1 = 1;
 
         int count = 0;
         do {
             usleep(30000);
-            rc = recv(s1, line, fileSize, 0);
-
-            
-            
-            char lineModified[1024 * 8];
-            
-            for(int i = 0; i< fileSize; i++){
-                lineModified[i] = analog_kanal_modell( line[i]);
-            }
-            
-            char *buffer = lineModified;
-            
-            char *zBuffer = bit_receive(buffer, fileSize);
-
-            //std::cout << line;
-
-            FILE *File;
-            File = fopen("received.txt", "wb");
-
-            fwrite(zBuffer, 1, fileSize / 8, File);
-            fclose(File);
+            rc = recv(s1, file, fileSize, 0);
 
 
 
 
+            //if received
             if (rc > 0) {
+
+
+                char fileModified[1024 * 8];
+
+                for (int i = 0; i < fileSize; i++) {
+                    fileModified[i] = analog_kanal_modell(file[i]);
+                }
+
+                char *buffer = fileModified;
+
+                char *zBuffer = bit_receive(buffer, fileSize);
+
+                //std::cout << line;
+
+                FILE *File;
+                File = fopen("received.txt", "wb");
+
+                fwrite(zBuffer, 1, fileSize / 8, File);
+                fclose(File);
+
                 printf("size: %d  bytes\n", rc);
-                char *received = bit_receive(line, rc);
+                char *received = bit_receive(file, rc);
+                
+                unsigned int crcval_server = hackers_delight_crc32((unsigned char*) zBuffer);
+
+                if (crcval_server == crcVal)
+                    cout << "Nachrict unverändert" << endl;
+                else
+
+                    cout << "Nachrict verändert" << endl;
+
                 //printf("%s \n", received);
                 //				line[rc] = '\0';
                 //				printf("%s \n",line);
             }
-        } while ((strcmp(key, line)) != 0 && (strcmp(key1, line)) != 0 && (rc > 0));
+        } while ((strcmp(key, file)) != 0 && (strcmp(key1, file)) != 0 && (rc > 0));
 
-    } while ((strcmp(key1, line)) != 0);
+    } while ((strcmp(key1, file)) != 0);
     shutdown(s, SHUT_RDWR);
     return 0;
 }
